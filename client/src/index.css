@@ -1,0 +1,876 @@
+import { useEffect, useMemo, useState } from 'react';
+import { NavLink, Route, Routes, useLocation } from 'react-router-dom';
+import {
+  ArrowUpRight,
+  Camera,
+  CheckCircle2,
+  ChevronRight,
+  DollarSign,
+  Gauge,
+  Leaf,
+  LocateFixed,
+  MapPinned,
+  Menu,
+  Plus,
+  ShieldCheck,
+  Sparkles,
+  Target,
+  Trash2,
+  Trophy,
+  UserCircle2,
+  Wallet,
+  X,
+} from 'lucide-react';
+import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { MapContainer, Marker, Popup, Circle, TileLayer } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+import L from 'leaflet';
+
+const API_BASE = 'http://localhost:5000/api';
+const demoUser = {
+  id: 'user_101',
+  name: 'Aarav Sharma',
+  email: 'demo@ecoreward.in',
+  phone: '+91 98765 43210',
+  totalPoints: 280,
+  totalActivities: 6,
+  totalWaste: 72,
+  rupeeBalance: 28,
+  profileImage: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=300&q=80',
+  location: { lat: 19.076, lng: 72.877 },
+};
+
+const demoAdmin = {
+  users: [
+    { ...demoUser, totalPoints: 280 },
+    { id: 'user_102', name: 'Meera Iyer', totalPoints: 420 },
+  ],
+  pendingActivities: [
+    {
+      id: 'activity_3',
+      title: 'Canal-side cleanup',
+      area: 'Bengaluru East',
+      status: 'Pending',
+      points: 50,
+      wasteKg: 20,
+      beforeImage: 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=800&q=80',
+      afterImage: 'https://images.unsplash.com/photo-1517048676732-d65bc937f952?auto=format&fit=crop&w=800&q=80',
+    },
+  ],
+  withdrawals: [
+    { id: 'withdrawal_1', userName: 'Meera Iyer', amount: 200, upi: 'meera@upi', status: 'Pending' },
+  ],
+};
+
+const categories = [
+  { name: 'Small', points: 10 },
+  { name: 'Medium', points: 25 },
+  { name: 'Large', points: 50 },
+];
+
+const defaultMapPoints = [
+  { id: 'map_1', name: 'Central Gardens', lat: 19.076, lng: 72.877, pollution: 'Moderate', type: 'Cleaned' },
+  { id: 'map_2', name: 'Lal Baug Road', lat: 19.09, lng: 72.88, pollution: 'High', type: 'Polluted' },
+  { id: 'map_3', name: 'Bengaluru East', lat: 12.9716, lng: 77.5946, pollution: 'High', type: 'Polluted' },
+];
+
+const statsCards = [
+  { label: 'Reward Points', value: '280', icon: Trophy, tone: 'green' },
+  { label: 'Clean Activities', value: '6', icon: CheckCircle2, tone: 'blue' },
+  { label: 'Waste Collected', value: '72 kg', icon: Trash2, tone: 'amber' },
+  { label: 'Balance', value: '₹28', icon: Wallet, tone: 'emerald' },
+];
+
+const chartData = [
+  { name: 'Mon', points: 40 },
+  { name: 'Tue', points: 30 },
+  { name: 'Wed', points: 65 },
+  { name: 'Thu', points: 75 },
+  { name: 'Fri', points: 35 },
+  { name: 'Sat', points: 80 },
+  { name: 'Sun', points: 90 },
+];
+
+const badgeColors = {
+  Approved: 'bg-emerald-100 text-emerald-700',
+  Pending: 'bg-amber-100 text-amber-700',
+  Rejected: 'bg-red-100 text-red-700',
+};
+
+const defaultRoute = '/dashboard';
+
+const getLeafletIcon = (color) =>
+  new L.Icon({
+    iconUrl: `https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-${color}.png`,
+    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+    shadowSize: [41, 41],
+  });
+
+async function apiRequest(endpoint, options = {}) {
+  try {
+    const response = await fetch(`${API_BASE}${endpoint}`, {
+      headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+      ...options,
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Request failed');
+    return data;
+  } catch (error) {
+    console.warn('API unavailable, using demo data:', error.message);
+    return null;
+  }
+}
+
+function useUserData() {
+  const [loading, setLoading] = useState(true);
+  const [dashboard, setDashboard] = useState({ user: demoUser, history: [], chartData });
+  const [leaderboard, setLeaderboard] = useState([
+    { name: 'Meera Iyer', points: 420 },
+    { name: 'Aarav Sharma', points: 280 },
+    { name: 'Rohan', points: 250 },
+  ]);
+  const [mapPoints, setMapPoints] = useState(defaultMapPoints);
+  const [adminData, setAdminData] = useState(demoAdmin);
+
+  useEffect(() => {
+    const load = async () => {
+      const [dashRes, boardRes, mapRes, adminRes] = await Promise.all([
+        apiRequest(`/dashboard/${demoUser.id}`),
+        apiRequest('/leaderboard'),
+        apiRequest('/map'),
+        apiRequest('/admin'),
+      ]);
+
+      if (dashRes?.success) setDashboard(dashRes.data);
+      if (boardRes?.success) setLeaderboard(boardRes.data);
+      if (mapRes?.success) setMapPoints(mapRes.data);
+      if (adminRes?.success) setAdminData(adminRes.data);
+      setLoading(false);
+    };
+
+    load();
+  }, []);
+
+  return { loading, dashboard, leaderboard, mapPoints, adminData, setDashboard, setLeaderboard, setMapPoints, setAdminData };
+}
+
+function AppShell() {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const location = useLocation();
+  const navItems = [
+    { label: 'Home', to: '/' },
+    { label: 'Dashboard', to: '/dashboard' },
+    { label: 'Clean Now', to: '/clean' },
+    { label: 'Map', to: '/map' },
+    { label: 'Rewards', to: '/rewards' },
+    { label: 'Withdraw', to: '/withdraw' },
+    { label: 'Profile', to: '/profile' },
+    { label: 'Admin', to: '/admin' },
+  ];
+
+  return (
+    <div className="min-h-screen bg-slate-50 text-slate-800">
+      <header className="sticky top-0 z-50 border-b border-emerald-100 bg-white/90 backdrop-blur">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
+          <div className="flex items-center gap-3">
+            <button className="md:hidden" onClick={() => setSidebarOpen(!sidebarOpen)} aria-label="Toggle menu">
+              {sidebarOpen ? <X size={22} /> : <Menu size={22} />}
+            </button>
+            <div className="flex items-center gap-2">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
+                <Leaf size={20} />
+              </div>
+              <div>
+                <div className="text-lg font-semibold text-emerald-900">EcoReward</div>
+                <div className="text-[11px] tracking-[0.2em] text-slate-500 uppercase">Clean. Earn. Protect.</div>
+              </div>
+            </div>
+          </div>
+
+          <nav className="hidden items-center gap-2 md:flex">
+            {navItems.map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                className={({ isActive }) =>
+                  `rounded-full px-3 py-2 text-sm font-medium transition ${
+                    isActive ? 'bg-emerald-600 text-white shadow-soft' : 'text-slate-600 hover:bg-emerald-50 hover:text-emerald-700'
+                  }`
+                }
+              >
+                {item.label}
+              </NavLink>
+            ))}
+          </nav>
+
+          <div className="flex items-center gap-3">
+            <div className="hidden rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm font-medium text-slate-700 md:block">
+              ₹{demoUser.rupeeBalance} balance
+            </div>
+            <button className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-soft transition hover:bg-emerald-700">
+              Login
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {sidebarOpen && (
+        <div className="border-b border-emerald-100 bg-white md:hidden">
+          <div className="mx-auto flex max-w-7xl flex-col gap-1 px-4 py-3">
+            {navItems.map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                onClick={() => setSidebarOpen(false)}
+                className={({ isActive }) =>
+                  `rounded-lg px-3 py-2 text-sm font-medium ${
+                    location.pathname === item.to ? 'bg-emerald-50 text-emerald-700' : 'text-slate-600'
+                  }`
+                }
+              >
+                {item.label}
+              </NavLink>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <main className="mx-auto max-w-7xl px-4 py-6 md:px-6">
+        <Routes>
+          <Route path="/" element={<LandingPage />} />
+          <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/clean" element={<CleanNowPage />} />
+          <Route path="/map" element={<MapPage />} />
+          <Route path="/rewards" element={<RewardsPage />} />
+          <Route path="/withdraw" element={<WithdrawPage />} />
+          <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/admin" element={<AdminPage />} />
+        </Routes>
+      </main>
+    </div>
+  );
+}
+
+function LandingPage() {
+  return (
+    <div className="space-y-10">
+      <section className="rounded-[32px] bg-gradient-to-br from-emerald-600 via-emerald-500 to-green-300 p-8 text-white shadow-soft md:p-10">
+        <div className="grid items-center gap-8 md:grid-cols-2">
+          <div>
+            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/30 bg-white/10 px-3 py-1 text-sm font-medium text-emerald-50">
+              <Sparkles size={14} /> Eco impact platform
+            </div>
+            <h1 className="max-w-xl text-4xl font-black leading-tight md:text-6xl">
+              Clean Your Surroundings, Earn Rewards, Save Our Planet.
+            </h1>
+            <p className="mt-5 max-w-lg text-base text-emerald-50/90 md:text-lg">
+              Turn cleaning into income. Verify community cleanup, collect waste, earn points, and convert them to real money through secure UPI withdrawals.
+            </p>
+            <div className="mt-7 flex flex-wrap items-center gap-4">
+              <a href="/dashboard" className="rounded-full bg-white px-5 py-3 font-semibold text-emerald-700 transition hover:bg-emerald-50">
+                Explore Dashboard
+              </a>
+              <a href="/clean" className="rounded-full border border-white/50 px-5 py-3 font-semibold text-white transition hover:bg-white/10">
+                Start Cleaning
+              </a>
+            </div>
+            <div className="mt-8 flex items-center gap-6 text-sm text-emerald-50/90">
+              <div><span className="block text-3xl font-black text-white">1.2K+</span> eco activities</div>
+              <div><span className="block text-3xl font-black text-white">₹2.4L</span> withdrawn</div>
+            </div>
+          </div>
+          <div className="rounded-[28px] bg-white/15 p-4 shadow-soft backdrop-blur-sm">
+            <div className="overflow-hidden rounded-[24px] bg-white">
+              <img
+                alt="Clean environment"
+                className="h-[420px] w-full object-cover"
+                src="https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=1200&q=80"
+              />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="grid gap-5 md:grid-cols-3">
+        {[
+          { title: 'Camera verification', text: 'Capture before/after proof to validate cleaning efforts.', icon: Camera },
+          { title: 'Live GPS tracking', text: 'Record exact coordinates and map polluted areas in real time.', icon: LocateFixed },
+          { title: 'Earn through UPI', text: 'Convert points to withdrawals after admin approval.', icon: DollarSign },
+        ].map(({ title, text, icon: Icon }) => (
+          <div key={title} className="rounded-3xl border border-emerald-100 bg-white p-6 shadow-soft">
+            <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700">
+              <Icon size={24} />
+            </div>
+            <h3 className="mb-2 text-xl font-bold text-slate-800">{title}</h3>
+            <p className="text-sm text-slate-600">{text}</p>
+          </div>
+        ))}
+      </section>
+    </div>
+  );
+}
+
+function DashboardPage() {
+  const { dashboard, leaderboard } = useUserData();
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm font-medium uppercase tracking-[0.2em] text-emerald-600">Dashboard</p>
+          <h2 className="mt-2 text-3xl font-black text-slate-800">Welcome back, {dashboard.user.name}</h2>
+        </div>
+        <button className="hidden rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-soft md:inline-flex">
+          Submit activity
+        </button>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-4">
+        {statsCards.map((card, index) => {
+          const Icon = card.icon;
+          return (
+            <div key={index} className="rounded-3xl border border-emerald-100 bg-white p-5 shadow-soft">
+              <div className="mb-4 flex items-center justify-between">
+                <div className="rounded-2xl bg-emerald-100 p-2 text-emerald-700">
+                  <Icon size={20} />
+                </div>
+                <span className="text-xs font-semibold text-slate-400">Live</span>
+              </div>
+              <div className="text-sm text-slate-500">{card.label}</div>
+              <div className="mt-2 text-2xl font-black text-slate-800">{card.value}</div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-[1.6fr_0.9fr]">
+        <div className="rounded-[28px] border border-emerald-100 bg-white p-5 shadow-soft">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h3 className="text-xl font-black text-slate-800">Reward progress</h3>
+              <p className="text-sm text-slate-500">Your eco contribution over the past week</p>
+            </div>
+            <div className="rounded-full bg-emerald-100 px-3 py-1 text-sm font-semibold text-emerald-700">+12% this week</div>
+          </div>
+          <div className="h-72">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={dashboard.chartData || chartData}>
+                <defs>
+                  <linearGradient id="colorPoints" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#1fbf73" stopOpacity={0.8} />
+                    <stop offset="95%" stopColor="#1fbf73" stopOpacity={0.1} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis dataKey="name" stroke="#64748b" />
+                <YAxis stroke="#64748b" />
+                <Tooltip />
+                <Area type="monotone" dataKey="points" stroke="#1fbf73" fill="url(#colorPoints)" strokeWidth={3} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="rounded-[28px] border border-emerald-100 bg-white p-5 shadow-soft">
+          <div className="mb-4 flex items-center justify-between">
+            <h3 className="text-xl font-black text-slate-800">Leaderboard</h3>
+            <Trophy className="text-amber-500" size={20} />
+          </div>
+          <div className="space-y-4">
+            {leaderboard.map((person, index) => (
+              <div key={person.name} className="flex items-center justify-between rounded-2xl bg-slate-50 p-3">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-100 text-sm font-black text-emerald-700">
+                    #{index + 1}
+                  </div>
+                  <div>
+                    <div className="font-semibold text-slate-700">{person.name}</div>
+                    <div className="text-xs text-slate-500">Community champion</div>
+                  </div>
+                </div>
+                <div className="font-black text-emerald-700">{person.points} pts</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
+        <div className="rounded-[28px] border border-emerald-100 bg-white p-5 shadow-soft">
+          <h3 className="mb-4 text-xl font-black text-slate-800">Recent activities</h3>
+          <div className="space-y-4">
+            {(dashboard.history || []).slice(0, 4).map((item) => (
+              <div key={item.id} className="flex items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                <div className="flex items-center gap-3">
+                  <img alt={item.title} className="h-14 w-14 rounded-xl object-cover" src={item.afterImage} />
+                  <div>
+                    <div className="font-semibold text-slate-700">{item.title}</div>
+                    <div className="text-xs text-slate-500">{item.area} · {new Date(item.date).toLocaleDateString()}</div>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="font-black text-emerald-700">+{item.points} pts</div>
+                  <span className={`inline-flex rounded-full px-2 py-1 text-[10px] font-semibold ${badgeColors[item.status] || 'bg-slate-100 text-slate-600'}`}>
+                    {item.status}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-[28px] border border-emerald-100 bg-white p-5 shadow-soft">
+          <h3 className="mb-4 text-xl font-black text-slate-800">Rewards history</h3>
+          <div className="space-y-3">
+            {[{ label: 'UPI payout', value: '₹100', time: '2 days ago', status: 'Approved' }, { label: 'Bonus reward', value: '+25 pts', time: '4 days ago', status: 'Added' }, { label: 'Activity reward', value: '+10 pts', time: '6 days ago', status: 'Added' }].map((item) => (
+              <div key={item.label} className="flex items-center justify-between rounded-2xl bg-slate-50 p-3">
+                <div>
+                  <div className="font-semibold text-slate-700">{item.label}</div>
+                  <div className="text-xs text-slate-500">{item.time}</div>
+                </div>
+                <div className="text-right">
+                  <div className="font-black text-emerald-700">{item.value}</div>
+                  <div className="text-[10px] uppercase tracking-wide text-slate-500">{item.status}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CleanNowPage() {
+  const [form, setForm] = useState({ title: 'Park cleanup', area: 'Central Gardens', wasteKg: 10, level: 'Small', lat: 19.076, lng: 72.877 });
+  const [beforeImg, setBeforeImg] = useState('https://images.unsplash.com/photo-1532996122724-e3c354a0b15b?auto=format&fit=crop&w=800&q=80');
+  const [afterImg, setAfterImg] = useState('https://images.unsplash.com/photo-1522493562229-111ce8d0f63f?auto=format&fit=crop&w=800&q=80');
+  const [status, setStatus] = useState('');
+
+  useEffect(() => {
+    if ('geolocation' in navigator) {
+      navigator.geolocation.getCurrentPosition((position) => {
+        setForm((current) => ({ ...current, lat: position.coords.latitude, lng: position.coords.longitude }));
+      }, () => {
+        setStatus('Location access unavailable on this device, using default demo coordinates.');
+      });
+    }
+  }, []);
+
+  const handleFile = (event, type) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      if (type === 'before') setBeforeImg(String(e.target?.result || ''));
+      else setAfterImg(String(e.target?.result || ''));
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const submitActivity = async (event) => {
+    event.preventDefault();
+    setStatus('Submitting cleaning activity for verification...');
+
+    const result = await apiRequest('/activities', {
+      method: 'POST',
+      body: JSON.stringify({
+        userId: demoUser.id,
+        ...form,
+        beforeImage: beforeImg,
+        afterImage: afterImg,
+      }),
+    });
+
+    if (result?.success) {
+      setStatus('Cleaning activity submitted successfully. Verification is pending admin approval.');
+    } else {
+      setStatus('Submission failed. Demo mode saved the form locally for testing.');
+    }
+  };
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-[1fr_0.85fr]">
+      <form onSubmit={submitActivity} className="rounded-[28px] border border-emerald-100 bg-white p-6 shadow-soft">
+        <div className="mb-5 flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium uppercase tracking-[0.2em] text-emerald-600">Clean now</p>
+            <h2 className="mt-2 text-3xl font-black text-slate-800">Report a cleanup</h2>
+          </div>
+          <div className="rounded-full bg-emerald-100 p-2 text-emerald-700">
+            <Camera size={22} />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <label className="space-y-2 text-sm font-medium text-slate-700">
+            Activity title
+            <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none focus:border-emerald-500 focus:bg-white" />
+          </label>
+          <label className="space-y-2 text-sm font-medium text-slate-700">
+            Area / location
+            <input value={form.area} onChange={(e) => setForm({ ...form, area: e.target.value })} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none focus:border-emerald-500 focus:bg-white" />
+          </label>
+          <label className="space-y-2 text-sm font-medium text-slate-700">
+            Waste collected (kg)
+            <input type="number" value={form.wasteKg} onChange={(e) => setForm({ ...form, wasteKg: e.target.value })} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none focus:border-emerald-500 focus:bg-white" />
+          </label>
+          <label className="space-y-2 text-sm font-medium text-slate-700">
+            Cleanup size
+            <select value={form.level} onChange={(e) => setForm({ ...form, level: e.target.value })} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none focus:border-emerald-500 focus:bg-white">
+              {categories.map((item) => (
+                <option key={item.name} value={item.name}>{item.name} ({item.points} pts)</option>
+              ))}
+            </select>
+          </label>
+          <label className="space-y-2 text-sm font-medium text-slate-700">
+            Latitude
+            <input type="number" step="0.000001" value={form.lat} onChange={(e) => setForm({ ...form, lat: e.target.value })} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none focus:border-emerald-500 focus:bg-white" />
+          </label>
+          <label className="space-y-2 text-sm font-medium text-slate-700">
+            Longitude
+            <input type="number" step="0.000001" value={form.lng} onChange={(e) => setForm({ ...form, lng: e.target.value })} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none focus:border-emerald-500 focus:bg-white" />
+          </label>
+        </div>
+
+        <div className="mt-5 grid gap-4 md:grid-cols-2">
+          <div className="rounded-2xl border border-dashed border-emerald-200 bg-emerald-50 p-3">
+            <div className="mb-2 flex items-center justify-between text-sm font-semibold text-emerald-700">
+              Before photo <label className="cursor-pointer text-emerald-600">Upload<input type="file" accept="image/*" capture="environment" className="hidden" onChange={(event) => handleFile(event, 'before')} /></label>
+            </div>
+            <img src={beforeImg} alt="Before cleanup" className="h-40 w-full rounded-xl object-cover" />
+          </div>
+          <div className="rounded-2xl border border-dashed border-emerald-200 bg-emerald-50 p-3">
+            <div className="mb-2 flex items-center justify-between text-sm font-semibold text-emerald-700">
+              After photo <label className="cursor-pointer text-emerald-600">Upload<input type="file" accept="image/*" capture="environment" className="hidden" onChange={(event) => handleFile(event, 'after')} /></label>
+            </div>
+            <img src={afterImg} alt="After cleanup" className="h-40 w-full rounded-xl object-cover" />
+          </div>
+        </div>
+
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+          <div className="text-sm text-slate-500">GPS locked: {form.lat.toFixed(4)}, {form.lng.toFixed(4)}</div>
+          <button type="submit" className="rounded-full bg-emerald-600 px-5 py-3 font-semibold text-white shadow-soft transition hover:bg-emerald-700">
+            Submit for review
+          </button>
+        </div>
+
+        {status && <div className="mt-4 rounded-2xl bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{status}</div>}
+      </form>
+
+      <div className="rounded-[28px] border border-emerald-100 bg-white p-5 shadow-soft">
+        <h3 className="mb-4 text-xl font-black text-slate-800">Verification rules</h3>
+        <div className="space-y-4">
+          {[
+            'Before-and-after image proof is required.',
+            'GPS coordinates must match the reported location.',
+            'Duplicate activities are prevented by location and image checks.',
+            'Only verified work is awarded reward points.',
+          ].map((rule) => (
+            <div key={rule} className="flex items-start gap-3 rounded-2xl bg-slate-50 p-3">
+              <CheckCircle2 className="mt-0.5 text-emerald-600" size={18} />
+              <span className="text-sm text-slate-700">{rule}</span>
+            </div>
+          ))}
+
+          <div className="mt-6 rounded-3xl bg-gradient-to-br from-emerald-100 to-green-50 p-4">
+            <div className="text-sm text-emerald-700">Reward estimate</div>
+            <div className="mt-2 text-3xl font-black text-slate-800">{categories.find((item) => item.name === form.level)?.points || 10} pts</div>
+            <div className="mt-2 text-sm text-slate-600">Equivalent to ₹{((categories.find((item) => item.name === form.level)?.points || 10) / 10).toFixed(2)}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MapPage() {
+  const { mapPoints } = useUserData();
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm font-medium uppercase tracking-[0.2em] text-emerald-600">Map</p>
+          <h2 className="mt-2 text-3xl font-black text-slate-800">Live environment coverage</h2>
+        </div>
+        <div className="rounded-full bg-emerald-100 px-3 py-2 text-sm font-semibold text-emerald-700">GPS tracking active</div>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-[1.4fr_0.6fr]">
+        <div className="overflow-hidden rounded-[26px] border border-emerald-100 bg-white p-2 shadow-soft">
+          <div className="h-[520px] w-full rounded-2xl">
+            <MapContainer center={[19.076, 72.877]} zoom={12} style={{ height: '100%', width: '100%', borderRadius: '1rem' }}>
+              <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution='&copy; OpenStreetMap contributors' />
+              {mapPoints.map((point) => (
+                <Marker key={point.id} position={[point.lat, point.lng]} icon={point.type === 'Cleaned' ? getLeafletIcon('green') : getLeafletIcon('red')}>
+                  <Popup>
+                    <div className="font-medium">{point.name}</div>
+                    <div className="text-xs">{point.type} · {point.pollution}</div>
+                  </Popup>
+                </Marker>
+              ))}
+              <Circle center={[19.076, 72.877]} radius={2000} pathOptions={{ color: '#22c55e', fillColor: '#86efac', fillOpacity: 0.18 }} />
+            </MapContainer>
+          </div>
+        </div>
+
+        <div className="space-y-4 rounded-[28px] border border-emerald-100 bg-white p-5 shadow-soft">
+          <h3 className="text-xl font-black text-slate-800">Pollution hotspots</h3>
+          {mapPoints.map((point) => (
+            <div key={point.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+              <div className="flex items-center justify-between">
+                <div className="font-semibold text-slate-700">{point.name}</div>
+                <span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${point.type === 'Cleaned' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                  {point.type}
+                </span>
+              </div>
+              <div className="mt-2 text-sm text-slate-500">Pollution level: {point.pollution}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RewardsPage() {
+  const { dashboard } = useUserData();
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm font-medium uppercase tracking-[0.2em] text-emerald-600">Rewards</p>
+          <h2 className="mt-2 text-3xl font-black text-slate-800">Points & reward engine</h2>
+        </div>
+        <div className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700">1 point = ₹0.10</div>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-3">
+        {categories.map((item) => (
+          <div key={item.name} className="rounded-[28px] border border-emerald-100 bg-white p-5 shadow-soft">
+            <div className="mb-3 flex items-center justify-between">
+              <div className="text-lg font-black text-slate-800">{item.name}</div>
+              <div className="rounded-full bg-emerald-100 px-3 py-1 text-sm font-bold text-emerald-700">{item.points} pts</div>
+            </div>
+            <div className="text-sm text-slate-600">Reward value: ₹{(item.points / 10).toFixed(2)}</div>
+            <div className="mt-4 h-2.5 rounded-full bg-slate-200">
+              <div className="h-full rounded-full bg-emerald-500" style={{ width: `${(item.points / 50) * 100}%` }} />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="rounded-[28px] border border-emerald-100 bg-white p-5 shadow-soft">
+        <h3 className="mb-4 text-xl font-black text-slate-800">Reward summary</h3>
+        <div className="grid gap-4 md:grid-cols-4">
+          <div className="rounded-2xl bg-slate-50 p-4"><div className="text-sm text-slate-500">Earnings</div><div className="mt-2 text-2xl font-black text-emerald-700">₹{dashboard.user.rupeeBalance || 28}</div></div>
+          <div className="rounded-2xl bg-slate-50 p-4"><div className="text-sm text-slate-500">Transactions</div><div className="mt-2 text-2xl font-black text-slate-800">12</div></div>
+          <div className="rounded-2xl bg-slate-50 p-4"><div className="text-sm text-slate-500">This month</div><div className="mt-2 text-2xl font-black text-slate-800">980 pts</div></div>
+          <div className="rounded-2xl bg-slate-50 p-4"><div className="text-sm text-slate-500">Next milestone</div><div className="mt-2 text-2xl font-black text-slate-800">500 pts</div></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function WithdrawPage() {
+  const [form, setForm] = useState({ amount: 200, upi: 'demo@upi' });
+  const [message, setMessage] = useState('');
+
+  const submit = async (event) => {
+    event.preventDefault();
+    const result = await apiRequest('/withdrawals', {
+      method: 'POST',
+      body: JSON.stringify({ userId: demoUser.id, ...form }),
+    });
+
+    if (result?.success) {
+      setMessage('Withdrawal request created. It is pending admin approval and cannot be marked as successful until provider confirmation.');
+    } else {
+      setMessage('Request failed. Demo mode handled the test flow.');
+    }
+  };
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-[1fr_0.9fr]">
+      <form onSubmit={submit} className="rounded-[28px] border border-emerald-100 bg-white p-6 shadow-soft">
+        <div className="mb-5 flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium uppercase tracking-[0.2em] text-emerald-600">Withdraw</p>
+            <h2 className="mt-2 text-3xl font-black text-slate-800">Convert points to cash</h2>
+          </div>
+          <div className="rounded-full bg-emerald-100 p-2 text-emerald-700"><Wallet size={22} /></div>
+        </div>
+
+        <div className="space-y-5">
+          <label className="block space-y-2 text-sm font-medium text-slate-700">
+            UPI ID
+            <input value={form.upi} onChange={(e) => setForm({ ...form, upi: e.target.value })} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none focus:border-emerald-500 focus:bg-white" />
+          </label>
+          <label className="block space-y-2 text-sm font-medium text-slate-700">
+            Withdrawal amount (₹)
+            <input type="number" min={200} value={form.amount} onChange={(e) => setForm({ ...form, amount: Number(e.target.value) })} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none focus:border-emerald-500 focus:bg-white" />
+          </label>
+          <div className="rounded-2xl bg-emerald-50 px-4 py-3 text-sm text-emerald-800">Minimum withdrawal: ₹200. 100 points = ₹10.</div>
+          <button type="submit" className="w-full rounded-full bg-emerald-600 px-5 py-3 font-semibold text-white shadow-soft transition hover:bg-emerald-700">
+            Request withdrawal
+          </button>
+        </div>
+        {message && <div className="mt-4 rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-800">{message}</div>}
+      </form>
+
+      <div className="space-y-4 rounded-[28px] border border-emerald-100 bg-white p-5 shadow-soft">
+        <h3 className="text-xl font-black text-slate-800">Payment status</h3>
+        {[
+          { title: 'Request submitted', note: 'Pending verification by admin', status: 'Pending' },
+          { title: 'Provider confirmation', note: 'Settlement is only confirmed after gateway response', status: 'Awaiting provider' },
+          { title: 'Final payout', note: 'Only after successful approval and settlement', status: 'Protected' },
+        ].map((item) => (
+          <div key={item.title} className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+            <div className="flex items-center justify-between">
+              <div className="font-semibold text-slate-700">{item.title}</div>
+              <span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${badgeColors[item.status] || 'bg-slate-100 text-slate-600'}`}>{item.status}</span>
+            </div>
+            <div className="mt-2 text-sm text-slate-500">{item.note}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ProfilePage() {
+  const { dashboard } = useUserData();
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-[0.8fr_1.2fr]">
+      <div className="rounded-[28px] border border-emerald-100 bg-white p-6 shadow-soft text-center">
+        <img src={dashboard.user.profileImage} alt={dashboard.user.name} className="mx-auto h-24 w-24 rounded-full object-cover ring-4 ring-emerald-100" />
+        <h2 className="mt-4 text-2xl font-black text-slate-800">{dashboard.user.name}</h2>
+        <p className="text-sm text-slate-500">{dashboard.user.email}</p>
+        <div className="mt-4 inline-flex items-center gap-2 rounded-full bg-emerald-100 px-3 py-1 text-sm font-semibold text-emerald-700">
+          <ShieldCheck size={16} /> Verified contributor
+        </div>
+      </div>
+
+      <div className="rounded-[28px] border border-emerald-100 bg-white p-6 shadow-soft">
+        <h3 className="text-xl font-black text-slate-800">Profile overview</h3>
+        <div className="mt-5 grid gap-4 md:grid-cols-2">
+          <div className="rounded-2xl bg-slate-50 p-4"><div className="text-sm text-slate-500">Phone</div><div className="mt-2 font-bold text-slate-800">{dashboard.user.phone}</div></div>
+          <div className="rounded-2xl bg-slate-50 p-4"><div className="text-sm text-slate-500">Location</div><div className="mt-2 font-bold text-slate-800">{dashboard.user.location.lat.toFixed(4)}, {dashboard.user.location.lng.toFixed(4)}</div></div>
+          <div className="rounded-2xl bg-slate-50 p-4"><div className="text-sm text-slate-500">Points</div><div className="mt-2 font-bold text-emerald-700">{dashboard.user.totalPoints}</div></div>
+          <div className="rounded-2xl bg-slate-50 p-4"><div className="text-sm text-slate-500">Total waste</div><div className="mt-2 font-bold text-slate-800">{dashboard.user.totalWaste} kg</div></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AdminPage() {
+  const { adminData } = useUserData();
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <p className="text-sm font-medium uppercase tracking-[0.2em] text-emerald-600">Admin</p>
+        <h2 className="mt-2 text-3xl font-black text-slate-800">Admin dashboard</h2>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-4">
+        {[
+          { label: 'Users', value: adminData?.stats?.totalUsers || 3, icon: UserCircle2 },
+          { label: 'Pending cleanups', value: adminData?.stats?.activeCleanups || 1, icon: Target },
+          { label: 'Approval queue', value: adminData?.stats?.pendingApprovals || 1, icon: Gauge },
+          { label: 'Verified payouts', value: '₹2.4L', icon: Sparkles },
+        ].map(({ label, value, icon: Icon }) => (
+          <div key={label} className="rounded-[24px] border border-emerald-100 bg-white p-5 shadow-soft">
+            <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700">
+              <Icon size={20} />
+            </div>
+            <div className="text-sm text-slate-500">{label}</div>
+            <div className="mt-2 text-2xl font-black text-slate-800">{value}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <div className="rounded-[28px] border border-emerald-100 bg-white p-5 shadow-soft">
+          <h3 className="mb-4 text-xl font-black text-slate-800">Registered users</h3>
+          <div className="space-y-3">
+            {(adminData?.users || demoAdmin.users).map((user) => (
+              <div key={user.id} className="flex items-center justify-between rounded-2xl bg-slate-50 p-3">
+                <div>
+                  <div className="font-semibold text-slate-700">{user.name}</div>
+                  <div className="text-xs text-slate-500">{user.email}</div>
+                </div>
+                <div className="text-right">
+                  <div className="font-black text-emerald-700">{user.totalPoints} pts</div>
+                  <div className="text-[10px] uppercase tracking-wide text-slate-500">Active</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-[28px] border border-emerald-100 bg-white p-5 shadow-soft">
+          <h3 className="mb-4 text-xl font-black text-slate-800">Cleanup verification</h3>
+          <div className="space-y-3">
+            {(adminData?.pendingActivities || demoAdmin.pendingActivities).map((item) => (
+              <div key={item.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                <div className="flex items-center justify-between">
+                  <div className="font-semibold text-slate-700">{item.title}</div>
+                  <span className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-semibold text-amber-700">Pending</span>
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <img src={item.beforeImage} alt="Before" className="h-20 w-full rounded-xl object-cover" />
+                  <img src={item.afterImage} alt="After" className="h-20 w-full rounded-xl object-cover" />
+                </div>
+                <div className="mt-3 flex gap-2">
+                  <button className="flex-1 rounded-full bg-emerald-600 px-3 py-2 text-sm font-semibold text-white">Approve</button>
+                  <button className="flex-1 rounded-full bg-red-100 px-3 py-2 text-sm font-semibold text-red-700">Reject</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-[28px] border border-emerald-100 bg-white p-5 shadow-soft">
+        <h3 className="mb-4 text-xl font-black text-slate-800">Withdrawal review</h3>
+        <div className="space-y-3">
+          {(adminData?.withdrawals || demoAdmin.withdrawals).map((item) => (
+            <div key={item.id} className="flex items-center justify-between rounded-2xl bg-slate-50 p-3">
+              <div>
+                <div className="font-semibold text-slate-700">{item.userName}</div>
+                <div className="text-xs text-slate-500">UPI: {item.upi}</div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="text-right">
+                  <div className="font-black text-emerald-700">₹{item.amount}</div>
+                  <div className="text-[10px] uppercase tracking-wide text-slate-500">{item.status}</div>
+                </div>
+                <button className="rounded-full bg-emerald-600 px-3 py-2 text-xs font-semibold text-white">Approve</button>
+                <button className="rounded-full bg-red-100 px-3 py-2 text-xs font-semibold text-red-700">Reject</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function App() {
+  const { loading } = useUserData();
+
+  if (loading) {
+    return <div className="flex min-h-screen items-center justify-center text-lg font-semibold text-emerald-700">Loading EcoReward...</div>;
+  }
+
+  return <AppShell />;
+}
